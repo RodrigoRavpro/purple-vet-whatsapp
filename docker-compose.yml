@@ -1,0 +1,30 @@
+services:
+  purple-vet-whatsapp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: purple-vet-whatsapp
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    ports:
+      - "3001:3001"
+    volumes:
+      - whatsapp_auth:/app/.wwebjs_auth
+      - whatsapp_cache:/app/.wwebjs_cache
+    networks:
+      - purple-vet-network
+
+networks:
+  purple-vet-network:
+    external: true
+    name: purple-vet-network
+
+volumes:
+  whatsapp_auth:
+    driver: local
+  whatsapp_cache:
+    driver: local
