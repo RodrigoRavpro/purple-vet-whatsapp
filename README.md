@@ -54,12 +54,12 @@ cp .env.example .env
 
 Edite `.env`:
 ```env
-PORT=3001
+PORT=3002
 NODE_ENV=production
 API_SECRET=your_api_secret_here
 
 # WhatsApp Cloud API
-WHATSAPP_API_URL=https://graph.facebook.com/v18.0
+WHATSAPP_API_URL=https://graph.facebook.com/v22.0
 WHATSAPP_ACCESS_TOKEN=your_access_token_here
 WHATSAPP_PHONE_NUMBER_ID=your_phone_number_id_here
 WHATSAPP_BUSINESS_ACCOUNT_ID=your_business_account_id_here
