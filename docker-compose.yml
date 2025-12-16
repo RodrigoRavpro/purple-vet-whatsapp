@@ -12,19 +12,24 @@ services:
       - PORT=3001
     ports:
       - "3001:3001"
-    volumes:
-      - whatsapp_auth:/app/.wwebjs_auth
-      - whatsapp_cache:/app/.wwebjs_cache
     networks:
       - purple-vet-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost:3001/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 networks:
   purple-vet-network:
     external: true
     name: purple-vet-network
-
-volumes:
-  whatsapp_auth:
-    driver: local
-  whatsapp_cache:
-    driver: local

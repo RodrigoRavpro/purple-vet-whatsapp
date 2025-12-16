@@ -1,33 +1,42 @@
-import { Client, LocalAuth, MessageMedia } from 'whatsapp-web.js';
+import axios from 'axios';
 import { logger } from '../config/logger';
-
-export interface WhatsAppStatus {
-  isConnected: boolean;
-  phoneNumber?: string;
-  qrCode?: string;
-}
 
 export interface WhatsAppSendMessageRequest {
   recipientPhone: string;
   recipientName?: string;
-  content: string;
-  mediaUrl?: string;
+  message: string;
+  linkUrl?: string;
+  linkPreview?: boolean;
+}
+
+export interface WhatsAppStatus {
+  isConfigured: boolean;
+  phoneNumberId: string;
+  apiVersion: string;
 }
 
 /**
- * WhatsApp Service (Singleton)
- * Gerencia uma única instância do WhatsApp Client
+ * WhatsApp Cloud API Service (Singleton)
+ * Usa a API oficial do WhatsApp Business para enviar mensagens
  */
 class WhatsAppService {
   private static instance: WhatsAppService;
-  private client: Client | null = null;
-  private isInitializing: boolean = false;
-  private qrCodeData: string | null = null;
-  private isReady: boolean = false;
-  private phoneNumber: string | null = null;
+  private apiUrl: string;
+  private accessToken: string;
+  private phoneNumberId: string;
+  private businessAccountId: string;
 
   private constructor() {
-    // Private constructor para garantir singleton
+    this.apiUrl = process.env.WHATSAPP_API_URL || 'https://graph.facebook.com/v18.0';
+    this.accessToken = process.env.WHATSAPP_ACCESS_TOKEN || '';
+    this.phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
+    this.businessAccountId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '';
+
+    if (!this.accessToken || !this.phoneNumberId) {
+      logger.warn('WhatsApp Cloud API not configured. Set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID');
+    } else {
+      logger.info('WhatsApp Cloud API configured successfully');
+    }
   }
 
   public static getInstance(): WhatsAppService {
@@ -38,186 +47,182 @@ class WhatsAppService {
   }
 
   /**
-   * Inicializa o cliente WhatsApp
+   * Verifica se o serviço está configurado
    */
-  public async initialize(): Promise<void> {
-    if (this.client && this.isReady) {
-      logger.info('WhatsApp client already initialized and ready');
-      return;
-    }
-
-    if (this.isInitializing) {
-      logger.info('WhatsApp client is already initializing');
-      return;
-    }
-
-    try {
-      this.isInitializing = true;
-      logger.info('Initializing WhatsApp client...');
-
-      this.client = new Client({
-        authStrategy: new LocalAuth({
-          dataPath: '.wwebjs_auth',
-        }),
-        puppeteer: {
-          headless: true,
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
-            '--disable-gpu',
-          ],
-        },
-      });
-
-      // Evento: QR Code gerado
-      this.client.on('qr', (qr: string) => {
-        logger.info('QR Code received, scan to authenticate');
-        this.qrCodeData = qr;
-      });
-
-      // Evento: Autenticado com sucesso
-      this.client.on('authenticated', () => {
-        logger.info('WhatsApp authenticated successfully!');
-        this.qrCodeData = null;
-      });
-
-      // Evento: Cliente pronto para usar
-      this.client.on('ready', async () => {
-        logger.info('WhatsApp client is ready!');
-        this.isReady = true;
-        this.isInitializing = false;
-
-        const info = this.client?.info;
-        if (info) {
-          this.phoneNumber = info.wid.user;
-          logger.info(`Connected with phone: ${this.phoneNumber}`);
-        }
-      });
-
-      // Evento: Desconectado
-      this.client.on('disconnected', async (reason: string) => {
-        logger.warn(`WhatsApp client disconnected: ${reason}`);
-        this.isReady = false;
-        this.qrCodeData = null;
-      });
-
-      // Evento: Erro de autenticação
-      this.client.on('auth_failure', (msg: string) => {
-        logger.error(`WhatsApp authentication failed: ${msg}`);
-        this.isReady = false;
-        this.qrCodeData = null;
-        this.isInitializing = false;
-      });
-
-      await this.client.initialize();
-    } catch (error) {
-      logger.error('Error initializing WhatsApp client:', error);
-      this.isInitializing = false;
-      throw error;
-    }
+  private isConfigured(): boolean {
+    return !!(this.accessToken && this.phoneNumberId);
   }
 
   /**
-   * Retorna o QR Code para autenticação
-   */
-  public getQRCode(): string | null {
-    return this.qrCodeData;
-  }
-
-  /**
-   * Retorna o status da conexão WhatsApp
+   * Retorna o status da configuração
    */
   public getStatus(): WhatsAppStatus {
     return {
-      isConnected: this.isReady,
-      phoneNumber: this.phoneNumber || undefined,
-      qrCode: this.qrCodeData || undefined,
+      isConfigured: this.isConfigured(),
+      phoneNumberId: this.phoneNumberId ? this.phoneNumberId.substring(0, 8) + '...' : 'not_set',
+      apiVersion: 'v18.0',
     };
   }
 
   /**
-   * Envia mensagem via WhatsApp
+   * Formata número de telefone para WhatsApp (remove caracteres especiais)
+   */
+  private formatPhoneNumber(phone: string): string {
+    // Remove todos os caracteres não numéricos
+    let formatted = phone.replace(/\D/g, '');
+    
+    // Se começar com 0, remove
+    if (formatted.startsWith('0')) {
+      formatted = formatted.substring(1);
+    }
+    
+    // Se não tiver código do país, adiciona Brasil (55)
+    if (formatted.length <= 11) {
+      formatted = '55' + formatted;
+    }
+    
+    return formatted;
+  }
+
+  /**
+   * Envia mensagem de texto via WhatsApp Cloud API
    */
   public async sendMessage(
     request: WhatsAppSendMessageRequest
   ): Promise<{ success: boolean; messageId?: string; error?: string }> {
-    if (!this.client || !this.isReady) {
+    if (!this.isConfigured()) {
       return {
         success: false,
-        error: 'WhatsApp não está conectado. Inicialize o cliente primeiro.',
+        error: 'WhatsApp Cloud API não está configurada. Verifique as variáveis de ambiente.',
       };
     }
 
     try {
-      const formattedPhone = request.recipientPhone.replace(/\D/g, '');
-      logger.info(`Sending message to ${formattedPhone}`);
+      const formattedPhone = this.formatPhoneNumber(request.recipientPhone);
+      logger.info(`Sending message to ${formattedPhone} via WhatsApp Cloud API`);
 
-      // Verificar se o número existe no WhatsApp
-      const numberId = await this.client.getNumberId(formattedPhone);
+      const url = `${this.apiUrl}/${this.phoneNumberId}/messages`;
 
-      if (!numberId || !numberId._serialized) {
-        logger.error(`Number ${formattedPhone} not registered on WhatsApp`);
-        return {
-          success: false,
-          error: `O número ${request.recipientPhone} não está registrado no WhatsApp.`,
-        };
+      // Construir mensagem com link
+      let messageText = request.message;
+      if (request.linkUrl) {
+        messageText += `\n\n🔗 ${request.linkUrl}`;
       }
 
-      const validChatId = numberId._serialized;
-      let sentMessage;
+      const payload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: formattedPhone,
+        type: 'text',
+        text: {
+          preview_url: request.linkPreview !== false, // Default true para mostrar preview do link
+          body: messageText,
+        },
+      };
 
-      // Se tiver mídia
-      if (request.mediaUrl) {
-        logger.info(`Sending message with media: ${request.mediaUrl}`);
-        const media = await MessageMedia.fromUrl(request.mediaUrl);
-        sentMessage = await this.client.sendMessage(validChatId, media, {
-          caption: request.content,
-        });
-      } else {
-        logger.info(`Sending text message to: ${validChatId}`);
-        sentMessage = await this.client.sendMessage(validChatId, request.content);
-      }
+      logger.debug('WhatsApp API Request:', { url, payload });
 
-      logger.info(`Message sent successfully: ${sentMessage.id._serialized}`);
+      const response = await axios.post(url, payload, {
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      logger.info(`WhatsApp message sent successfully: ${response.data.messages[0].id}`);
 
       return {
         success: true,
-        messageId: sentMessage.id._serialized,
+        messageId: response.data.messages[0].id,
       };
     } catch (error: any) {
-      logger.error('Error sending WhatsApp message:', error);
+      logger.error('Error sending WhatsApp message:', {
+        error: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
+
+      let errorMessage = 'Erro ao enviar mensagem';
+      
+      if (error.response?.data?.error) {
+        const whatsappError = error.response.data.error;
+        errorMessage = `WhatsApp API Error: ${whatsappError.message} (Code: ${whatsappError.code})`;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
       return {
         success: false,
-        error: error.message || 'Erro ao enviar mensagem',
+        error: errorMessage,
       };
     }
   }
 
   /**
-   * Desconecta o WhatsApp
+   * Envia mensagem com template (para notificações aprovadas)
    */
-  public async disconnect(): Promise<void> {
-    if (!this.client) {
-      return;
+  public async sendTemplateMessage(
+    recipientPhone: string,
+    templateName: string,
+    languageCode: string = 'pt_BR',
+    parameters?: string[]
+  ): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    if (!this.isConfigured()) {
+      return {
+        success: false,
+        error: 'WhatsApp Cloud API não está configurada.',
+      };
     }
 
     try {
-      logger.info('Disconnecting WhatsApp client...');
-      await this.client.logout();
-      await this.client.destroy();
-      this.client = null;
-      this.isReady = false;
-      this.qrCodeData = null;
-      this.phoneNumber = null;
-      logger.info('WhatsApp client disconnected successfully');
-    } catch (error) {
-      logger.error('Error disconnecting WhatsApp client:', error);
-      throw error;
+      const formattedPhone = this.formatPhoneNumber(recipientPhone);
+      const url = `${this.apiUrl}/${this.phoneNumberId}/messages`;
+
+      const payload: any = {
+        messaging_product: 'whatsapp',
+        to: formattedPhone,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: {
+            code: languageCode,
+          },
+        },
+      };
+
+      // Adicionar parâmetros se existirem
+      if (parameters && parameters.length > 0) {
+        payload.template.components = [
+          {
+            type: 'body',
+            parameters: parameters.map(param => ({
+              type: 'text',
+              text: param,
+            })),
+          },
+        ];
+      }
+
+      const response = await axios.post(url, payload, {
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      logger.info(`WhatsApp template message sent: ${response.data.messages[0].id}`);
+
+      return {
+        success: true,
+        messageId: response.data.messages[0].id,
+      };
+    } catch (error: any) {
+      logger.error('Error sending template message:', error.response?.data || error.message);
+      
+      return {
+        success: false,
+        error: error.response?.data?.error?.message || error.message,
+      };
     }
   }
 }
