@@ -46,7 +46,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 // Start server
 app.listen(PORT, () => {
-  logger.info(`🚀 WhatsApp API running on port ${PORT}`);
+  logger.info(` WhatsApp API running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 

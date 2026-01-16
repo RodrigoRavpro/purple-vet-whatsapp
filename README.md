@@ -2,16 +2,16 @@
 
 API isolada para envio de mensagens via **WhatsApp Business Cloud API** (API oficial do Meta)
 
-## 🎯 Características
+##  Características
 
-- ✅ Usa API oficial do WhatsApp (não requer QR Code)
-- ✅ Envio de mensagens de texto com links
-- ✅ Preview automático de links
-- ✅ Envio de templates aprovados (notificações)
-- ✅ Validação de entrada com Joi
-- ✅ Rate limiting
-- ✅ Logs estruturados com Winston
-- ✅ Docker containerizado
+-  Usa API oficial do WhatsApp (não requer QR Code)
+-  Envio de mensagens de texto com links
+-  Preview automático de links
+-  Envio de templates aprovados (notificações)
+-  Validação de entrada com Joi
+-  Rate limiting
+-  Logs estruturados com Winston
+-  Docker containerizado
 
 ## 📁 Estrutura
 
@@ -33,7 +33,7 @@ purple-vet-whatsapp/
 └── tsconfig.json
 ```
 
-## 🚀 Como executar
+##  Como executar
 
 ### 1. Configurar WhatsApp Business API
 
@@ -160,7 +160,7 @@ curl -X POST http://localhost:3001/api/whatsapp/send \
   }'
 ```
 
-## 📝 Formato de Telefone
+##  Formato de Telefone
 
 O serviço aceita vários formatos e normaliza automaticamente:
 
@@ -220,7 +220,7 @@ curl -X POST http://localhost:3001/api/whatsapp/send \
   }'
 ```
 
-## ⚠️ Limites da API do WhatsApp
+##  Limites da API do WhatsApp
 
 - **Conversas iniciadas por empresa**: Requer template aprovado nas primeiras 24h
 - **Após resposta do usuário**: Pode enviar mensagens livres por 24h
